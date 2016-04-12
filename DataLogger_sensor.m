@@ -1,6 +1,40 @@
 classdef DataLogger_sensor < handle
-    %ACTUATOR Summary of this class goes here
-    %   Detailed explanation goes here
+    % DataLogger_sensor is a general class for defining a device that connects to the top a analog in in the DI-155 datalogger
+    %
+    %                  - Gain values meaning:
+    %                    Gain    � Volts Full Scale
+    %                    1       50.0
+    %                    2       25.0
+    %                    4       12.5
+    %                    5       10.0
+    %                    8       6.25
+    %                    10      5.0
+    %                    16      3.125
+    %                    20      2.5
+    %
+    %
+    %     - filter @integer: 0 = disabled. Number of values to group and mean
+    %                        together. For example, a value of 3 will calculate
+    %                        the mean value of every 3 obtained values and output
+    %                        the result as data.
+    %                NOTES:
+    %                  If the sample frequency is 1000 and the filter is 3, the
+    %                  processed data frequency will be 1000/3
+    %
+    %     - postProcessCallback @function: This function will be called with each value in
+    %                        in volts, the returned value will be stored as the
+    %                        correct output value.
+    %                NOTES:
+    %                  This function should be fast and not asyncronous for the
+    %                  correct operation.
+    %                  If your functions throws an error it will be catched and
+    %                  not displayed. The value will be computed without the
+    %                  function.
+    %                  It migth be faster to pass @(x)(x) as a function than not
+    %                  passing anything. Although both ways should work.
+    %                EXAMPLE:
+    %                  @(x) (x*0,001)  % Will display the output in mV
+    %
 
     properties (GetAccess = public, SetAccess = immutable)
       id
@@ -22,7 +56,6 @@ classdef DataLogger_sensor < handle
     end
 
     methods
-
       %% Constructor: Initializes the object
       function obj = DataLogger_sensor(id, name, inputPort, gain, filter, unitsName, postProcessCallback)
         narginchk(4, 7); % Check if we pass the correct number of arguments
@@ -53,7 +86,12 @@ classdef DataLogger_sensor < handle
       end
 
       function addData(obj, data)
-        obj.data = [obj.data; data];
+        try
+          obj.data = obj.data.append(data);
+        catch err
+          display(['WARNING: Data from ' obj.name ' has been reset due to impossibility to append'])
+          obj.data = data;
+        end
         obj.lastData = data;
       end
 
@@ -136,5 +174,4 @@ classdef DataLogger_sensor < handle
         obj.unitsName = unitsName;
       end
     end
-
 end

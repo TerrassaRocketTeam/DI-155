@@ -8,7 +8,7 @@ classdef DataLogger < handle
   %   HOW TO USE?
   %
   %   1) Set up the logger with
-  %         logger = DataLogger(ComPort, SampleRate, ChanMat, Filter, Units);
+  %         logger = DataLogger(ComPort, SampleRate, chanMat, filter, postProcessCallback);
   %      more details on the initialitzation description
   %
   %   2) [OPTIONAL] Use calibrateLogger to calibrate your sensors
@@ -27,43 +27,46 @@ classdef DataLogger < handle
   %   5) Delete the logger
   %         logger.delete();
   %
-
-
   %   ACCESSIBLE VARIABLES
-  %     - ChanMat
-  %     - Units
-  %     - Filter
+  %     - chanMat
+  %     - postProcessCallback
+  %     - filter
   %     - ComPort
   %     - SampleRate
-  %     - SampledData    Last data sampled but not yet processed
-  %     - PocessedData   Last data processed
-  %     - nChannels      Number of channels activated (through ChanMat)
+  %     - nChannels      Number of channels activated (through chanMat)
   %
 
-  properties (GetAccess=private)
-    s
+  properties (GetAccess = public, SetAccess = immutable)
+    ComPort
   end
 
   properties
-    ChanMat
-    Units
-    Filter
-    ComPort
     SampleRate
-    SampledData
-    PocessedData
-    realTime
+    ConnectedDevices
   end
 
-  properties (Dependent)
+  properties (GetAccess = public, SetAccess = private, SetObservable = true)
+    outConfiguration
+    inConfiguration
+    isCapturing
+  end
+
+  properties (Dependent = true)
     nChannels
+    chanMat
+    postProcessCallback
+    filter
+  end
+
+  properties (Access = private)
+    s
   end
 
   methods
 
     %%
     %   + Initialitzation:
-    %     logger = DataLogger(ComPort, SampleRate, ChanMat, Filter, Units)
+    %     logger = DataLogger(ComPort, SampleRate, chanMat, filter, postProcessCallback)
     %
     %     - ComPort @string: The port name used.
     %                EXAMPLE:
@@ -76,53 +79,16 @@ classdef DataLogger < handle
     %                EXAMPLE:
     %                  1000
     %
-    %     - ChanMat @2x4 matrix: Channel settings (enable and gain)
-    %                NOTES:
-    %                       enable,    gain
-    %                  A1 [ 0 or 1,    1-20 ]
-    %                  A2 [ 0 or 1,    1-20 ]
-    %                  A3 [ 0 or 1,    1-20 ]
-    %                  A4 [ 0 or 1,    1-20 ]
-    %
-    %                  - Gain values meaning:
-    %                    Gain    � Volts Full Scale
-    %                    1       50.0
-    %                    2       25.0
-    %                    4       12.5
-    %                    5       10.0
-    %                    8       6.25
-    %                    10      5.0
-    %                    16      3.125
-    %                    20      2.5
-    %
-    %     - Filter @integer: 0 = disabled. Number of values to group and mean
-    %                        together. For example, a value of 3 will calculate
-    %                        the mean value of every 3 obtained values and output
-    %                        the result as data.
-    %                NOTES:
-    %                  If the sample frequency is 1000 and the filter is 3, the
-    %                  processed data frequency will be 1000/3
-    %
-    %     - Units @function: This function will be called with each value in
-    %                        in volts, the returned value will be stored as the
-    %                        correct output value.
-    %                NOTES:
-    %                  This function should be fast and not asyncronous for the
-    %                  correct operation.
-    %                  If your functions throws an error it will be catched and
-    %                  not displayed. The value will be computed without the
-    %                  function.
-    %                  It migth be faster to pass @(x)(x) as a function than not
-    %                  passing anything. Although both ways should work.
-    %                EXAMPLE:
-    %                  @(x) (x*0,001)  % Will display the output in mV
-    %
-    function obj = DataLogger(ComPort, SampleRate, ChanMat, Filter, Units)
+
+    function obj = DataLogger(ComPort, SampleRate, ConnectedDevices)
       obj.ComPort = ComPort;
       obj.SampleRate = SampleRate;
-      obj.ChanMat = ChanMat;
-      obj.Units = Units;
-      obj.Filter = Filter;
+      obj.ConnectedDevices = ConnectedDevices;
+
+      % We set the initial configuration
+      obj.outConfiguration = [0; 0; 0; 0]; % No output signal on any channel
+      obj.inConfiguration = getConfiguration(ConnectedDevices); % No sampling on any channel
+      obj.isCapturing = false;
 
       % Open a the serial conection and configure it
       obj.s = serial(ComPort,...
@@ -133,193 +99,272 @@ classdef DataLogger < handle
         'StopBits',1,...
         'DataBits',8);
 
-      InitiateConnection(obj.s, obj.ChanMat, obj.SampleRate)
-    end
-
-    function nChannels = get.nChannels(obj)
-      nChannels = 0;
-      for j=1:4
-        if obj.ChanMat(j,1)
-          nChannels = nChannels+1;
-        end
-      end
-    end
-
-    %%
-    %   + Get samples during some time:
-    %     logger.getSamples(Time)
-    %
-    %     - Time @number: Number of seconds to record
-    function data = getSamples(obj, Time)
-      %Star AD conversion
-      fprintf(obj.s,'%s\r','start');
-      data=[];
-
-      % Capturing data
-      fread(obj.s);
-      tic;
-      h = waitbar(0,'DI-155 is sampling.');
-      while toc<Time
-        data=[data fread(obj.s)];
-        waitbar(toc/Time,h);
-      end
-      fprintf(obj.s,'%s\r','stop');
-      close(h);
-
-      obj.SampledData = data;
+      fopen(obj.s);
     end
 
     %%
     %   + Get samples on almost real time:
-    %     logger.getRealTime(Time, callback)
+    %     logger.getData()
     %
-    %     - Time @number: Number of seconds to record
-    %             NOTE:
-    %               Use time 0 to keep collection data until
-    %               logger.stopRealTime() is called
-    %
-    %     - callback @function: Function that will be called with new datapoints.
-    %                           This function will be called with two arguments:
-    %                           data and time. Both are arrays of values.
-    function getRealTime(obj, Time, callback)
-      obj.startRealTime();
+    function getData(obj, Time)
+      % Check if Time was provided
+      if nargin == 1
+        Time = 0;
+      end
 
-      %Define variables
-      ChanMatL = obj.ChanMat;
-      UnitsL = obj.Units;
+      % Check if it is already getting data
+      if obj.isCapturing
+        error('Logger is already getting data')
+      end
+
+      % Configure connection
+      obj.ConfigureConnection();
+
+      % Save variables
+      chanMatL = obj.chanMat;
       nChannelsL = obj.nChannels;
       SampleRateL = obj.SampleRate;
-      FilterL = obj.Filter;
+      filterL = obj.filter;
 
-      %Star AD conversion
+      % Make sure we use the correct sample rate
+      SampleRateL = SampleRateL * obj.nChannels;
+      if SampleRateL > 10000
+        SampleRateL = 10000;
+      end
+
+      % Star AD conversion
+      obj.isCapturing = true;
       fprintf(obj.s,'%s\r','start');
-      data = [];
 
       % Capturing data
       fread(obj.s);
       tic;
       lastTime = 0;
-      while obj.shouldStopRealTime(Time)
+      while obj.shouldStop(Time) && ~obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
         buffer = fread(obj.s);
-        data = [data buffer];
-        [dec, t] = processBatchData(buffer, ChanMatL, UnitsL, nChannelsL, SampleRateL, FilterL);
-        callback(dec, t + lastTime);
-        lastTime = t(end) + lastTime;
+        [out, finalTime] = processBatchData(buffer, chanMatL, obj.postProcessCallback, nChannelsL, SampleRateL, filterL, lastTime);
+        obj.assingOutToSensors(out);
+        lastTime = finalTime + lastTime;
       end
+
+      % Stop the AD conversion
+      obj.isCapturing = false;
       fprintf(obj.s,'%s\r','stop');
 
-      obj.realTime = 0;
-      obj.SampledData = data;
+      if obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
+        obj.getData();
+      end
     end
 
+    function stopGetData(obj)
+      obj.isCapturing = false;
+    end
+
+    % Initiates the serial connection with the datalogger
+    function ConfigureConnection(obj)
+      %Binary data output format
+      fprintf(obj.s,'%s\r','bin');
+
+      % slist. Setting the list of channel to sample.
+      % See table 'DI-155 Scan List Word Definitions'
+      Pos=0;
+      ScanList(1:16)=0;
+
+      for i=1:4
+        if obj.chanMat(i,1)
+          switch i %Channel
+            case 1
+              ScanList(13:16)=[0 0 0 0];
+            case 2
+              ScanList(13:16)=[0 0 0 1];
+            case 3
+              ScanList(13:16)=[0 0 1 0];
+            case 4
+              ScanList(13:16)=[0 0 1 1];
+          end
+
+          switch obj.chanMat(i,2) % Analog gain code. See Table 'DI-155 Analog Gain Code Tale'
+            case 1
+              ScanList(6:8)=[0 0 0];
+            case 2
+              ScanList(6:8)=[0 0 1];
+            case 4
+              ScanList(6:8)=[0 1 0];
+            case 5
+              ScanList(6:8)=[0 1 1];
+            case 8
+              ScanList(6:8)=[1 0 0];
+            case 10
+              ScanList(6:8)=[1 0 1];
+            case 16
+              ScanList(6:8)=[1 1 0];
+            case 20
+              ScanList(6:8)=[1 1 1];
+          end
+          word=binaryVectorToDecimal(ScanList);
+          slist_str=['slist ' num2str(Pos) ' ' num2str(word)];
+          fprintf(obj.s,'%s\r',slist_str);
+          Pos=Pos+1;
+        end
+      end
+
+      % srate. Setting the sample rate to sample.
+      SR = obj.SampleRate * obj.nChannels;
+      if SR > 10000
+        SR = 10000;
+      end
+      srate=750000/SR; %This calculation is given in the documentation, in 'srate Scan Rate Command'.
+      srate_str=['srate ' num2str(srate)];
+      fprintf(obj.s,'%s\r',srate_str);
+    end
+
+    %
+    %   Getters and setters
+    %
+
+    function chanMat = get.chanMat (obj)
+      chanMat = zeros(4, 2);
+      chanMat(1:4, 2) = [1; 1; 1; 1];
+      for d = obj.ConnectedDevices
+        device = cell2mat(d);
+        % If the device is a sensor and its activated
+        if strcmp(d.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
+          chanMat(device.inputPort, 1:2) = [1, device.gain];
+        end
+      end
+    end
+
+    function postProcessCallback = get.postProcessCallback (obj)
+      postProcessCallback = mat2cell(zeros(4, 1));
+      for d = obj.ConnectedDevices
+        device = cell2mat(d);
+        % If the device is a sensor and its activated
+        if strcmp(d.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
+          postProcessCallback{device.inputPort} = device.postProcessCallback;
+        end
+      end
+    end
+
+    function filter = get.filter (obj)
+      filter = zeros(4, 1);
+      for d = obj.ConnectedDevices
+        device = cell2mat(d);
+        % If the device is a sensor and its activated
+        if strcmp(d.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
+          if ~filter
+            filter(device.inputPort) = 1;
+          else
+            filter(device.inputPort) = device.filter;
+          end
+        end
+      end
+    end
+
+    function nChannels = get.nChannels(obj)
+      nChannels = 0;
+      for j=1:4
+        if obj.chanMat(j,1)
+          nChannels = nChannels+1;
+        end
+      end
+    end
+
+    function set.ComPort(obj, ComPort)
+      if ~isa(ComPort, 'char')
+        error('ComPort must be a char')
+      end
+
+      obj.ComPort = ComPort;
+    end
+
+    function set.SampleRate(obj, SampleRate)
+      if ~isa(SampleRate, 'double')
+        error('SampleRate must be a double')
+      end
+
+      obj.SampleRate = SampleRate;
+    end
+
+    function set.ConnectedDevices(obj, ConnectedDevices)
+      if ~isa(ConnectedDevices, 'cell')
+        error('ConnectedDevices must be a cell')
+      end
+
+      obj.ConnectedDevices = ConnectedDevices;
+    end
+
+    % Clean the garbage on deleting
+    function delete(obj)
+      fclose(obj.s); % Kill the serial connection on deleting
+    end
+  end
+
+  methods (Access = private)
     %% @PRIVATE
-    %    + Update the realTime variable
-    function obj = startRealTime(obj)
-      obj.realTime = 1;
+    %    + Check if a real time acquisition shoul reconfigure with new settings
+    function stop = shouldReconfigure(obj, chanMat, SampleRate, filter)
+      stop = false;
+
+      if SampleRate ~= obj.SampleRate
+        stop = true;
+      end
+
+      for i = 1:4
+        if filter(i) ~= obj.filter(i)
+          stop = true;
+        end
+      end
+
+      for i = 1:4
+        if chanMat{i, 1} ~= obj.chanMat{i, 1}
+          stop = true;
+        end
+        if chanMat{i, 2} ~= obj.chanMat{i, 2}
+          stop = true;
+        end
+      end
     end
 
     %% @PRIVATE
     %    + Check if a real time acquisition shoul stop or not
-    function stop = shouldStopRealTime(obj, Time)
+    function stop = shouldStop(obj, Time)
       if Time
         stop = toc < Time;
       else
-        stop = obj.realTime;
+        stop = obj.isCapturing;
       end
     end
 
-    %%
-    %    + Stop realTime acquisition strated with a Time = 0;
-    function obj = stopRealTime(obj)
-      obj.realTime = 0;
-    end
-
-    %%
-    %   + Process and get data
-    %     [data, time] = logger.processData(data)
-    %
-    %     - data @dataset (OPTIONAL): If this parameter is not passed, the last
-    %                                 sample taken will be used
-    %
-    %     + data (output) array of values
-    %     + time (output) array of times for each value
-    function [dec, t] = processData(obj, data)
-      if nargin == 1
-        data = obj.SampledData;
+    %% @PRIVATE
+    %    + Assing out data to the different sensors
+    function assingOutToSensors(obj, out)
+      for d = obj.ConnectedDevices
+        device = cell2mat(d);
+        % If the device is a sensor and its activated
+        if strcmp(d.loggerType, 'sensor') && isa(out(device.inputPort), 'timeseries')
+          device.addData(out(device.inputPort))
+        end
       end
-      [dec, t] = processBatchData(data, obj.ChanMat, obj.Units, obj.nChannels, obj.SampleRate, obj.Filter);
-      obj.PocessedData = {dec, t};
-    end
-
-    function delete(obj)
-      fclose(obj.s);
     end
   end
-
 end
 
-% Initiates the serial connection with the datalogger
-function InitiateConnection(s, ChanMat, SampleRate)
-  fopen(s);
-  fprintf(s,'%s\r','asc');  %This command is required since we wil use the xhhhh format in the commands that follow.
-
-  % slist. Setting the list of channel to sample.
-  % See table 'DI-155 Scan List Word Definitions'
-  Pos=0;
-  ScanList(1:16)=0;
-
-  for i=1:4
-    if ChanMat(i,1)
-      switch i %Channel
-        case 1
-          ScanList(13:16)=[0 0 0 0];
-        case 2
-          ScanList(13:16)=[0 0 0 1];
-        case 3
-          ScanList(13:16)=[0 0 1 0];
-        case 4
-          ScanList(13:16)=[0 0 1 1];
-      end
-
-      switch ChanMat(i,2) % Analog gain code. See Table 'DI-155 Analog Gain Code Tale'
-        case 1
-          ScanList(6:8)=[0 0 0];
-        case 2
-          ScanList(6:8)=[0 0 1];
-        case 4
-          ScanList(6:8)=[0 1 0];
-        case 5
-          ScanList(6:8)=[0 1 1];
-        case 8
-          ScanList(6:8)=[1 0 0];
-        case 10
-          ScanList(6:8)=[1 0 1];
-        case 16
-          ScanList(6:8)=[1 1 0];
-        case 20
-          ScanList(6:8)=[1 1 1];
-      end
-      word=binaryVectorToHex(ScanList);
-      slist_str=['slist ' num2str(Pos) ' x' word];
-      fprintf(s,'%s\r',slist_str);
-      Pos=Pos+1;
+% Given the connected devices we activate all of them
+function inConfiguration = getConfiguration(ConnectedDevices)
+  inConfiguration = zeros(4, 1);
+  for d = obj.ConnectedDevices
+    device = cell2mat(d);
+    if strcmp(d.loggerType, 'sensor')
+      inConfiguration(device.inputPort) = 1;
     end
   end
-
-  % srate. Setting the sample rate to sample.
-  srate=750000/SampleRate; %This calculation is given in the documentation, in 'srate Scan Rate Command'.
-  srate_str=['srate ' num2str(srate)];
-  fprintf(s,'%s\r',srate_str);
-
-  %Binary data output format
-  fprintf(s,'%s\r','bin');
 end
 
 % Processes 1 single datapoint from the datalogger
-function dataPoint = processDataPoint(data, ChanMat)
-  dataPoint = zeros(4,1);
+function dataPoint = processDataPoint(data, chanMat)
+  dataPoint = zeros(1, 4);
   for i=1:4
-    if ChanMat(i,1)
+    if chanMat(i,1)
       bin=[data(1,:) data(2,:)]; % See Table 'Di-155 Binary Dara Stream Example'
 
       % Inverting the MSB
@@ -336,61 +381,71 @@ function dataPoint = processDataPoint(data, ChanMat)
 end
 
 % Processes mutliple datapoints from the datalogger, filter them and adds time
-function [dec, t] = processBatchData(data, ChanMat, Units, nChannels, SampleRate, Filter)
+function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback, nChannels, globalSampleRate, filter, initialTime)
   data=dec2bin(data);
 
   i=1;
   dec=[];
-  while i+(2*sum(ChanMat,1)-1)<=size(data,1) % While enough data is available for all enabled channels measurement.
+  while i+(2*sum(chanMat,1)-1)<=size(data,1) % While enough data is available for all enabled channels measurement.
     if ~str2double(data(i,8))% Sync bit
-      dec(end+1,:) = processDataPoint([data(i+1,1:7); data(i,1:7)], ChanMat);
+      dec(end+1,:) = processDataPoint([data(i+1,1:7); data(i,1:7)], chanMat);
       i=i+nChannels*2;
     else
       i=i+1;
     end
   end
 
-  % If Filter is set we group values and take the mean of them
-  if Filter
-    res = zeros(ceil(length(dec)/Filter), 1);
+  % Override the SampleRate with the new one
+  SampleRate = [globalSampleRate / filter(1); globalSampleRate / filter(2);...
+   globalSampleRate / filter(3); globalSampleRate / filter(4)];
 
-    for j=1:4
-      if ChanMat(j,1)
-        for i=1:floor(length(dec)/Filter)
-          res(i, j) = mean(dec(((i-1)*Filter+1):(i*Filter), j));
-        end
+  for j=1:4
+    if chanMat(j,1) && filter(j) ~= 1
+      % If filter is set we group values and take the mean of them
+      res = zeros(ceil(length(dec)/filter(j)), 1);
+      f = filter(j);
 
-        % If any values are left, we mean them
-        if mod(length(dec), Filter)
-          res(ceil(length(dec)/Filter), j) = mean(dec((end - mod(length(dec), Filter)):end, j));
-        end
+      for i=1:floor(length(dec)/f)
+        res(i) = mean(dec(((i-1)*f+1):(i*f), j));
       end
+
+      % If any values are left, we take the avarage of them
+      if mod(length(dec), f)
+        res(ceil(length(dec)/f)) = mean(dec((end - mod(length(dec), f)):end, j));
+      end
+
+      % Save the new data
+      dec(:, j) = res;
     end
-
-    % Save the new data
-    dec = res;
-    clear res;
-
-    % Override the SampleRate with the new one
-    SampleRate = SampleRate / Filter;
   end
+
+  clear res f;
 
   % From decimal number from -8192 to 8181 to voltage. See equation in
   % Table 'Ideal DI-155 ADC Binary Coding'
   for i=1:4
-    if ChanMat(i,1)
+    if chanMat(i,1)
       try
-        dec(:,i) = Units{i}((50/ChanMat(i,2))*(dec(:,i)/8192));
+        dec(:,i) = postProcessCallback{i}((50/chanMat(i,2))*(dec(:,i)/8192));
       catch err
         if strcmp(err.identifier, 'MATLAB:badsubscript')
-          display('WARNING: Units does not exist for some channel')
+          display('WARNING: postProcessCallback does not exist for some channel')
         else
-          display('WARNING: an error ocurred changing the units, check your Units functions')
+          display('WARNING: an error ocurred changing the postProcessCallback, check your postProcessCallback functions')
         end
-        dec(:,i) = (50/ChanMat(i,2))*(dec(:,i)/8192);
+        dec(:,i) = (50/chanMat(i,2))*(dec(:,i)/8192);
       end
     end
   end
 
-  t=0:(1/SampleRate):(length(dec)-1)*(1/SampleRate); % Time vector
+  % Generate the out timedata series
+  out = zeros(1, 4);
+  for i=1:4
+    if chanMat(i,1)
+      out(i) = timeseries(dec(:, i), (0:(1/SampleRate(i):(length(dec)-1)*(1/SampleRate(i)))) + initialTime);
+    end
+  end
+
+  % Set the final time
+  finalTime = (length(dec)-1)*(1/SampleRate(i)) + initialTime;
 end
