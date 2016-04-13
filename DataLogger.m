@@ -114,6 +114,7 @@ classdef DataLogger < handle
           obj.inConfiguration(device.inputPort) = 1;
         elseif strcmp(device.loggerType, 'actuator')
           obj.outConfiguration(device.outputPort) = 1;
+          obj.applyOutConfiguration();
         else
           error('This device has no correct loggerType')
         end
@@ -128,6 +129,7 @@ classdef DataLogger < handle
           obj.inConfiguration(device.inputPort) = 0;
         elseif strcmp(device.loggerType, 'actuator')
           obj.outConfiguration(device.outputPort) = 0;
+          obj.applyOutConfiguration();
         else
           error('This device has no correct loggerType')
         end
@@ -268,6 +270,16 @@ classdef DataLogger < handle
       srate=750000/SR; %This calculation is given in the documentation, in 'srate Scan Rate Command'.
       srate_str=['srate ' num2str(srate)];
       fprintf(obj.s,'%s\r',srate_str);
+    end
+
+    %
+    %   Send data api
+    %
+
+    % Configures the out ports as stated on the outConfiguration matrix
+    function applyOutConfiguration (obj)
+      outConf_str=['D 0' binaryVectorToHex(fliplr(~obj.outConfiguration))];
+      fprintf(obj.s,'%s\r',outConf_str);
     end
 
     %
