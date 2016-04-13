@@ -86,13 +86,13 @@ classdef DataLogger_sensor < handle
       end
 
       function addData(obj, data)
+        obj.lastData = data;
         try
           obj.data = obj.data.append(data);
         catch err
           display(['WARNING: Data from ' obj.name ' has been reset due to impossibility to append'])
           obj.data = data;
         end
-        obj.lastData = data;
       end
 
       %

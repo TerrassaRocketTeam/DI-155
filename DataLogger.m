@@ -27,14 +27,6 @@ classdef DataLogger < handle
   %   5) Delete the logger
   %         logger.delete();
   %
-  %   ACCESSIBLE VARIABLES
-  %     - chanMat
-  %     - postProcessCallback
-  %     - filter
-  %     - ComPort
-  %     - SampleRate
-  %     - nChannels      Number of channels activated (through chanMat)
-  %
 
   properties (GetAccess = public, SetAccess = immutable)
     ComPort
@@ -79,6 +71,8 @@ classdef DataLogger < handle
     %                EXAMPLE:
     %                  1000
     %
+    %     - ConnectedDevices @cell: A cell with sensor and actuator objects
+    %
 
     function obj = DataLogger(ComPort, SampleRate, ConnectedDevices)
       obj.ComPort = ComPort;
@@ -102,11 +96,53 @@ classdef DataLogger < handle
       fopen(obj.s);
     end
 
+    function foundDevice = findDeviceById(obj, id)
+      foundDevice = false;
+      for d = obj.ConnectedDevices
+        device = cell2mat(d);
+        if strcmp(device.id, id)
+          foundDevice = device;
+        end
+      end
+    end
+
+    function enableDevice(obj, id)
+      device = obj.findDeviceById(id);
+
+      if device
+        if strcmp(device.loggerType, 'sensor')
+          obj.inConfiguration(device.inputPort) = 1;
+        elseif strcmp(device.loggerType, 'actuator')
+          obj.outConfiguration(device.outputPort) = 1;
+        else
+          error('This device has no correct loggerType')
+        end
+      end
+    end
+
+    function disableDevice(obj, id)
+      device = obj.findDeviceById(id);
+
+      if device
+        if strcmp(device.loggerType, 'sensor')
+          obj.inConfiguration(device.inputPort) = 0;
+        elseif strcmp(device.loggerType, 'actuator')
+          obj.outConfiguration(device.outputPort) = 0;
+        else
+          error('This device has no correct loggerType')
+        end
+      end
+    end
+
     %%
     %   + Get samples on almost real time:
     %     logger.getData()
     %
-    function getData(obj, Time)
+    %     - Time @double: 0 for infinity (optional)
+    %
+    %     - device @device or @device id (optional)
+    %
+    function getData(obj, Time, device)
       % Check if Time was provided
       if nargin == 1
         Time = 0;
@@ -115,6 +151,22 @@ classdef DataLogger < handle
       % Check if it is already getting data
       if obj.isCapturing
         error('Logger is already getting data')
+      end
+
+      % Check if we require only one device
+      if nargin == 3
+        % If is an id, get the device
+        if isa(device, 'char')
+          device = obj.findDeviceById(device);
+        end
+
+        if strcmp(device.loggerType, 'sensor')
+          conf = [0; 0; 0; 0];
+          conf(device.inputPort) = 1;
+          obj.inConfiguration = conf;
+        else
+          error('This device is not supported')
+        end
       end
 
       % Configure connection

@@ -12,13 +12,14 @@ function calibrateLogger( logger )
     PreviousUnits = Units; %#ok<NODEF>
   end
 
-  % Get the required varaibles from the logger
-  ChanMat = logger.ChanMat;
-  Units = logger.Units;
+  % Get the required variables from the logger
+  ConnectedDevices = logger.ConnectedDevices;
 
   % Test each channel
-  for i=1:4
-    if ChanMat(i,1)
+  for d = ConnectedDevices
+    device = cell2mat(d);
+    if strcmp(device.loggerType, 'sensor')
+      i = device.inputPort;
       if exist('PreviousUnits', 'var') && ~isempty(PreviousUnits{i})
         % If there was a calibration file, ask the user wether to use it or not
 
@@ -29,14 +30,14 @@ function calibrateLogger( logger )
         switch selection,
           case 'Yes',
             % Use previous calibration
-            Units{i} = PreviousUnits{i};
+            ConnectedDevices.postProcessCallback = PreviousUnits{i};
           case 'No'
             % Launch the calibration tool
-            Units{i} = calibrate(logger, i);
+            ConnectedDevices.postProcessCallback = calibrate(logger, device);
         end
       else
         % Launch the calibration tool
-        Units{i} = calibrate(logger, i);
+        ConnectedDevices.postProcessCallback = calibrate(logger, device);
       end
     end
   end
@@ -49,18 +50,24 @@ function calibrateLogger( logger )
 end
 
 % This functions launches the claibration tools
-function [Units] = calibrate(logger, i)
+function [Units] = calibrate(logger, sensor)
   % Create a calibration utility instance with the callback to stop the
   % the logger when its necessary
-  utility = calibrationUtility2016(['Calibrate channel ' num2str(i)], @logger.stopRealTime);
+  utility = calibrationUtility2016(...
+    ['Calibrate channel ' sensor.name '(' sensor.id ')'], @logger.stopGetData);
+
+  % Listen for new data
+  % Send only one point at a time (we take the mean)
+  listener = addlistener(senor,'lastData','PostSet',...
+    @(~, ~)(utility.updateCurrentPoint(mean(sensor.lastData))));
 
   % Start getting data and send it to the calibration utility
-  % Send only one point at a time (we take the mean)
-  logger.getRealTime(0, @(dec, t)(utility.updateCurrentPoint(mean(dec(:,i)))));
+  logger.getData(0, sensor);
 
   % Save the retults
   Units = utility.Units;
 
-  % Delete the calibration utility
+  % Delete the calibration utility and he listener
   utility.delete();
+  delete(listener);
 end
