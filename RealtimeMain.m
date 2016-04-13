@@ -1,31 +1,45 @@
 % Pep Rodeja
 % Get data with DataLogger
 %
-% Main file, change configurations here and execute this
+% See RealtimeMain.m for more comments and how to process data in real time
 %
 
+% Sensor configuration
+id = 'sensor1'; % Sensor id, must be unique per logger
+name = 'Pressure Sensor'; % Sensor name (for logging)
+inputPort = 1; % Analog input port on the data logger
+gain = 5; % Sets the limits of the voltage input, see documentation !Important to not kill your data logger
+filter = 0; % Number of samples to merge and take the mean (reduces noise and induces a bit of lag)
+unitsName = 'bars'; % Units (for logging)
+postProcessCallback = @(x)(x * 0.1 + 2); % Given the units in volts, transform them to whatever you want
 
-% Select the channels used (firt column) and the gain (second)
-ChanMat=[0 5;...   % AnalogIn 1
-         1 5;...   % AnalogIn 2
-         0 10;...  % AnalogIn 3
-         0 20];    % AnalogIn 4
+% NOTE: You might want to create a subclass for each type of sensor so you
+% can automatically set the name, gain, filter, units and callback.
+% You may even add other properties or methods like for example:
+% sensor.isMaxed
+% or
+% sensor.hasBeenActivated
 
-% This will likely be replace in the calibration
-Units={@(x)(x);...
-      @(x)(x);...
-      @(x)(x);...
-      @(x)(x)};
+% Sensor set up
+sensor = DataLogger_sensor(id, name, inputPort, gain, filter, unitsName, postProcessCallback);
 
-ComPort='COM3';
-SampleRate = 5000; % Max 10000 for 1 channel
-Filter = 5; % Group values in groups of n and take the mean of each group.
+% Conected devices cell array
+ConnectedDevices = {sensor};
+
+% Logger configuration
 
 % Uncoment to list the ports
 % instrfind('Port',ComPort)
+ComPort = 'COM3';
+SampleRate = 5000; % Sample rate in Hz, see note below
 
-% Initialize the logger
-logger = DataLogger(ComPort, SampleRate, ChanMat, Filter, Units);
+% NOTE: The max sample rate is 10000, however this sample rate is shared between
+% the different ports. The sample rate you set here is PER CHANNEL
+% however, if you try to log from two channels at 10000 at the same time, you'll
+% get a warning and the closest sample rate possible, in this case 5000 for each
+% channel
+
+logger = DataLogger(ComPort, SampleRate, ConnectedDevices);
 
 try
   % We set a unique fileName to store the new data
@@ -38,10 +52,15 @@ try
   calibrateLogger(logger);
 
   % Set up the real time ploting
-  interface = PlotInterface({[0;0]}, {'Prova'}, 'x', 'y', @logger.stopRealTime);
+  interface = PlotInterface({[0; 0]}, {'Prova'}, 'x', 'y', @logger.stopGetData);
+
+  % Listen for new data
+  % Send only one point at a time (we take the mean)
+  listener = addlistener(senor,'lastData','PostSet',...
+    @(~, ~)(processRealtimePoint(sensor.lastData, interface, fileName)));
 
   % Start the data acquisition
-  logger.getRealTime(0, @(dec, t)(processRealtimePoint(t, dec, interface, fileName)));
+  logger.getData(0, sensor);
 
   % Dismantle that
   logger.delete()

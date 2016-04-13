@@ -1,8 +1,8 @@
-function processRealtimePoint( t, dec, interface, fileName )
+function processRealtimePoint( data, interface, fileName )
 %PROCESSREALTIMEPOINT Update the interface and save the data to the files
 
-interface.newPoint({[t; dec(:, 2)']});
+interface.newPoint({data});
 
-dlmwrite(fileName, [t', dec(:, 2)], '-append');
+dlmwrite(fileName, [data.Time data.Data], '-append');
 
 end
