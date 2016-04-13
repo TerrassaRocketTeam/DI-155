@@ -85,7 +85,7 @@ classdef PlotInterface < handle
 
       p = 1:length(data);
       for i=1:length(data)
-        p(i) = plot(h,data{i}(1,:),data{i}(2,:),'Color',cc(i,:));
+        p(i) = plot(h,data{i},'Color',cc(i,:));
       end
 
       legend(label);
@@ -103,14 +103,14 @@ classdef PlotInterface < handle
 
     function redraw(obj)
       for i=1:length(obj.plots)
-        set(obj.plots(i), 'XData', obj.data{i}(1,:));
-        set(obj.plots(i), 'YData', obj.data{i}(2,:));
+        set(obj.plots(i), 'XData', obj.data{i}.Time);
+        set(obj.plots(i), 'YData', obj.data{i}.Data);
       end
     end
 
     function obj = newPoint(obj, newPoint)
       for i=1:length(newPoint)
-        obj.data{i} = [obj.data{i}, newPoint{i}];
+        obj.data{i} = obj.data{i}.append(newPoint{i});
       end
       obj.redraw();
       drawnow;
