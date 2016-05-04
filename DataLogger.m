@@ -400,7 +400,7 @@ classdef DataLogger < handle
     end
 
     %% @PRIVATE
-    %    + Assing out data to the different sensors
+    %    + Assing the data recieved to the different sensors
     function assingOutToSensors(obj, out)
       for d = obj.ConnectedDevices
         device = cell2mat(d);
@@ -416,7 +416,7 @@ end
 % Given the connected devices we activate all of them
 function inConfiguration = getConfiguration(ConnectedDevices)
   inConfiguration = zeros(4, 1);
-  for d = obj.ConnectedDevices
+  for d = ConnectedDevices
     device = cell2mat(d);
     if strcmp(d.loggerType, 'sensor')
       inConfiguration(device.inputPort) = 1;
