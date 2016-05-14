@@ -78,14 +78,14 @@ classdef PlotInterface < handle
 
       hold on;
 
-      h = axes('Position',[.05 .075 .92 .89],...
-               'Parent',F,...
-               'Visible','on');
+      % h = axes('Position',[.05 .075 .92 .89],...
+      %          'Parent',F,...
+      %          'Visible','on');
       cc=lines(4);
 
       p = 1:length(data);
       for i=1:length(data)
-        p(i) = plot(h,data{i},'Color',cc(i,:));
+        p(i) = plot(data{i},'Color',cc(i,:));
       end
 
       legend(label);

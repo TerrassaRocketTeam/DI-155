@@ -14,10 +14,12 @@ function calibrateLogger( logger )
 
   % Get the required variables from the logger
   ConnectedDevices = logger.ConnectedDevices;
+  
+  Units = {};
 
   % Test each channel
   for d = ConnectedDevices
-    device = cell2mat(d);
+    device = d{1};
     if strcmp(device.loggerType, 'sensor')
       i = device.inputPort;
       if exist('PreviousUnits', 'var') && ~isempty(PreviousUnits{i})
@@ -30,23 +32,21 @@ function calibrateLogger( logger )
         switch selection,
           case 'Yes',
             % Use previous calibration
-            ConnectedDevices.postProcessCallback = PreviousUnits{i};
+            device.postProcessCallback = PreviousUnits{i};
           case 'No'
             % Launch the calibration tool
-            ConnectedDevices.postProcessCallback = calibrate(logger, device);
+            device.postProcessCallback = calibrate(logger, device);
         end
       else
         % Launch the calibration tool
-        ConnectedDevices.postProcessCallback = calibrate(logger, device);
+        device.postProcessCallback = calibrate(logger, device);
       end
     end
+    Units{i} = device.postProcessCallback
   end
 
   % Save this new calibration settings
   save('calibrationData', 'Units');
-
-  logger.Units = Units;
-
 end
 
 % This functions launches the claibration tools
@@ -58,7 +58,7 @@ function [Units] = calibrate(logger, sensor)
 
   % Listen for new data
   % Send only one point at a time (we take the mean)
-  listener = addlistener(senor,'lastData','PostSet',...
+  listener = addlistener(sensor,'lastData','PostSet',...
     @(~, ~)(utility.updateCurrentPoint(mean(sensor.lastData))));
 
   % Start getting data and send it to the calibration utility

@@ -75,14 +75,19 @@ classdef DataLogger < handle
     %
 
     function obj = DataLogger(ComPort, SampleRate, ConnectedDevices)
+      fprintf('set initial\n')
       obj.ComPort = ComPort;
       obj.SampleRate = SampleRate;
       obj.ConnectedDevices = ConnectedDevices;
+
+      fprintf('get config\n')
 
       % We set the initial configuration
       obj.outConfiguration = [0; 0; 0; 0]; % No output signal on any channel
       obj.inConfiguration = getConfiguration(ConnectedDevices); % No sampling on any channel
       obj.isCapturing = false;
+      
+      fprintf('berfore serial\n')
 
       % Open a the serial conection and configure it
       obj.s = serial(ComPort,...
@@ -94,12 +99,13 @@ classdef DataLogger < handle
         'DataBits',8);
 
       fopen(obj.s);
+      fprintf('final set\n')
     end
 
     function foundDevice = findDeviceById(obj, id)
       foundDevice = false;
       for d = obj.ConnectedDevices
-        device = cell2mat(d);
+        device = d{1};
         if strcmp(device.id, id)
           foundDevice = device;
         end
@@ -198,19 +204,22 @@ classdef DataLogger < handle
         buffer = fread(obj.s);
         [out, finalTime] = processBatchData(buffer, chanMatL, obj.postProcessCallback, nChannelsL, SampleRateL, filterL, lastTime);
         obj.assingOutToSensors(out);
-        lastTime = finalTime + lastTime;
+        lastTime = finalTime;
       end
 
       % Stop the AD conversion
       obj.isCapturing = false;
+      fprintf('stop connection2\n')
       fprintf(obj.s,'%s\r','stop');
 
       if obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
+        fprintf('\nRECONFIGURING\n\n')
         obj.getData();
       end
     end
 
     function stopGetData(obj)
+      fprintf('stop connection1\n')
       obj.isCapturing = false;
     end
 
@@ -290,20 +299,20 @@ classdef DataLogger < handle
       chanMat = zeros(4, 2);
       chanMat(1:4, 2) = [1; 1; 1; 1];
       for d = obj.ConnectedDevices
-        device = cell2mat(d);
+        device = d{1};
         % If the device is a sensor and its activated
-        if strcmp(d.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
+        if strcmp(device.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
           chanMat(device.inputPort, 1:2) = [1, device.gain];
         end
       end
     end
 
     function postProcessCallback = get.postProcessCallback (obj)
-      postProcessCallback = mat2cell(zeros(4, 1));
+      postProcessCallback = mat2cell(zeros(4, 1), [1 1 1 1]);
       for d = obj.ConnectedDevices
-        device = cell2mat(d);
+        device = d{1};
         % If the device is a sensor and its activated
-        if strcmp(d.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
+        if strcmp(device.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
           postProcessCallback{device.inputPort} = device.postProcessCallback;
         end
       end
@@ -312,9 +321,9 @@ classdef DataLogger < handle
     function filter = get.filter (obj)
       filter = zeros(4, 1);
       for d = obj.ConnectedDevices
-        device = cell2mat(d);
+        device = d{1};
         % If the device is a sensor and its activated
-        if strcmp(d.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
+        if strcmp(device.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
           if ~filter
             filter(device.inputPort) = 1;
           else
@@ -331,14 +340,6 @@ classdef DataLogger < handle
           nChannels = nChannels+1;
         end
       end
-    end
-
-    function set.ComPort(obj, ComPort)
-      if ~isa(ComPort, 'char')
-        error('ComPort must be a char')
-      end
-
-      obj.ComPort = ComPort;
     end
 
     function set.SampleRate(obj, SampleRate)
@@ -380,10 +381,10 @@ classdef DataLogger < handle
       end
 
       for i = 1:4
-        if chanMat{i, 1} ~= obj.chanMat{i, 1}
+        if chanMat(i, 1) ~= obj.chanMat(i, 1)
           stop = true;
         end
-        if chanMat{i, 2} ~= obj.chanMat{i, 2}
+        if chanMat(i, 2) ~= obj.chanMat(i, 2)
           stop = true;
         end
       end
@@ -395,6 +396,7 @@ classdef DataLogger < handle
       if Time
         stop = toc < Time;
       else
+        fprintf('check should stop capturing\n')
         stop = obj.isCapturing;
       end
     end
@@ -403,10 +405,10 @@ classdef DataLogger < handle
     %    + Assing the data recieved to the different sensors
     function assingOutToSensors(obj, out)
       for d = obj.ConnectedDevices
-        device = cell2mat(d);
+        device = d{1};
         % If the device is a sensor and its activated
-        if strcmp(d.loggerType, 'sensor') && isa(out(device.inputPort), 'timeseries')
-          device.addData(out(device.inputPort))
+        if strcmp(device.loggerType, 'sensor') && isa(out{device.inputPort}, 'timeseries')
+          device.addData(out{device.inputPort})
         end
       end
     end
@@ -417,8 +419,8 @@ end
 function inConfiguration = getConfiguration(ConnectedDevices)
   inConfiguration = zeros(4, 1);
   for d = ConnectedDevices
-    device = cell2mat(d);
-    if strcmp(d.loggerType, 'sensor')
+    device = d{1};
+    if strcmp(device.loggerType, 'sensor')
       inConfiguration(device.inputPort) = 1;
     end
   end
@@ -503,13 +505,14 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
   end
 
   % Generate the out timedata series
-  out = zeros(1, 4);
+  finalTime = 0;
+  out = mat2cell(zeros(4, 1), [1 1 1 1]);
   for i=1:4
     if chanMat(i,1)
-      out(i) = timeseries(dec(:, i), (0:(1/SampleRate(i):(length(dec)-1)*(1/SampleRate(i)))) + initialTime);
+      out{i} = timeseries(dec(:, i), ((0:(1/SampleRate(i)):(length(dec)-1)*(1/SampleRate(i))) + initialTime)');
+      
+      % Set the final time
+      finalTime = (length(dec)-1)*(1/SampleRate(i)) + initialTime;
     end
   end
-
-  % Set the final time
-  finalTime = (length(dec)-1)*(1/SampleRate(i)) + initialTime;
 end

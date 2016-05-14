@@ -1,6 +1,7 @@
 classdef calibrationUtility2015 < handle
     %   DEPRECATED
     %     NOTE: prefer calibrationUtility2016
+    %     NOTE: Not updated since it was deprecated, probably doesn't work.
     %
     %   This utility is a versiono of the calibrationUtility2016 utility
     %   compatible with matlab versions older than 2016a.

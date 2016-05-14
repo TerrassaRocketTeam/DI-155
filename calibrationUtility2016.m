@@ -282,7 +282,7 @@ classdef calibrationUtility2016 < handle
         switch selection,
           case 'Yes',
             obj.stopCallback();
-            obj.fig.delete();
+            delete(obj.fig);
           case 'No'
             return;
         end

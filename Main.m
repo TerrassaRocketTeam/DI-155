@@ -20,6 +20,8 @@ postProcessCallback = @(x)(x * 0.1 + 2); % Given the units in volts, transform t
 % or
 % sensor.hasBeenActivated
 
+fprintf('before sensor\n')
+
 % Sensor set up
 sensor = DataLogger_sensor(id, name, inputPort, gain, filter, unitsName, postProcessCallback);
 
@@ -30,7 +32,7 @@ ConnectedDevices = {sensor};
 
 % Uncoment to list the ports
 % instrfind('Port',ComPort)
-ComPort = 'COM3';
+ComPort = 'COM4';
 SampleRate = 5000; % Sample rate in Hz, see note below
 
 % NOTE: The max sample rate is 10000, however this sample rate is shared between
@@ -39,10 +41,16 @@ SampleRate = 5000; % Sample rate in Hz, see note below
 % get a warning and the closest sample rate possible, in this case 5000 for each
 % channel
 
+fprintf('before logger\n')
+
 logger = DataLogger(ComPort, SampleRate, ConnectedDevices);
 
-try
+fprintf('before calibration\n')
+
+% try
   calibrateLogger(logger);
+  
+  fprintf('calibrated\n')
 
   Time = 1; % Number of seconds
   logger.getData(Time);
@@ -52,15 +60,15 @@ try
   interface = PlotInterface({data}, {'Analog in [Volts]'}, 'x', 'y');
 
   logger.delete()
-catch err
-  display(['ERROR! ' err.message])
-  line = err.stack.line;
-  display(['Line: ' num2str(line)])
-  display(['Name: ' err.stack.name])
-  file = err.stack.file;
-  display(['File:' file])
-
-  if exist('logger','var')
-    logger.delete()
-  end
-end
+% catch err
+%   display(['ERROR! ' err.message])
+%   line = err.stack.line;
+%   display(['Line: ' num2str(line)])
+%   display(['Name: ' err.stack.name])
+%   file = err.stack.file;
+%   display(['File:' file])
+% 
+%   if exist('logger','var')
+%     logger.delete()
+%   end
+% end

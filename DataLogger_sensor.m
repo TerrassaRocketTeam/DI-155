@@ -103,7 +103,7 @@ classdef DataLogger_sensor < handle
       function set.filter (obj, filter)
         narginchk(2, 2); % Check the correct number of arguments
 
-        if ~ias(filter, 'double')
+        if ~isa(filter, 'double')
           error('Filter must be a double')
         end
 
@@ -118,7 +118,7 @@ classdef DataLogger_sensor < handle
       function set.gain (obj, gain)
         narginchk(2, 2); % Check the correct number of arguments
 
-        if ~ias(gain, 'double')
+        if ~isa(gain, 'double')
           error('Gain must be a double')
         end
 
