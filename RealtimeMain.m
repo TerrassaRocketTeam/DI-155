@@ -30,7 +30,7 @@ ConnectedDevices = {sensor};
 
 % Uncoment to list the ports
 % instrfind('Port',ComPort)
-ComPort = 'COM3';
+ComPort = 'COM4';
 SampleRate = 5000; % Sample rate in Hz, see note below
 
 % NOTE: The max sample rate is 10000, however this sample rate is shared between
@@ -52,11 +52,11 @@ try
   calibrateLogger(logger);
 
   % Set up the real time ploting
-  interface = PlotInterface({[0; 0]}, {'Prova'}, 'x', 'y', @logger.stopGetData);
+  interface = PlotInterface({timeseries(0,0)}, {'Prova'}, 'x', 'y', @logger.stopGetData);
 
   % Listen for new data
   % Send only one point at a time (we take the mean)
-  listener = addlistener(senor,'lastData','PostSet',...
+  listener = addlistener(sensor,'lastData','PostSet',...
     @(~, ~)(processRealtimePoint(sensor.lastData, interface, fileName)));
 
   % Start the data acquisition
