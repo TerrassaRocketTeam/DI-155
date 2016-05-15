@@ -46,8 +46,10 @@ classdef DataLogger < handle
   properties (Dependent = true)
     nChannels
     chanMat
+    dChanMat
     postProcessCallback
     filter
+    isDigitalEnabled
   end
 
   properties (Access = private)
@@ -75,19 +77,14 @@ classdef DataLogger < handle
     %
 
     function obj = DataLogger(ComPort, SampleRate, ConnectedDevices)
-      fprintf('set initial\n')
       obj.ComPort = ComPort;
       obj.SampleRate = SampleRate;
       obj.ConnectedDevices = ConnectedDevices;
-
-      fprintf('get config\n')
 
       % We set the initial configuration
       obj.outConfiguration = [0; 0; 0; 0]; % No output signal on any channel
       obj.inConfiguration = getConfiguration(ConnectedDevices); % No sampling on any channel
       obj.isCapturing = false;
-      
-      fprintf('berfore serial\n')
 
       % Open a the serial conection and configure it
       obj.s = serial(ComPort,...
@@ -99,7 +96,6 @@ classdef DataLogger < handle
         'DataBits',8);
 
       fopen(obj.s);
-      fprintf('final set\n')
     end
 
     function foundDevice = findDeviceById(obj, id)
@@ -115,7 +111,7 @@ classdef DataLogger < handle
     function enableDevice(obj, id)
       device = obj.findDeviceById(id);
 
-      if device
+      if isa(device, 'handle')
         if strcmp(device.loggerType, 'sensor')
           obj.inConfiguration(device.inputPort) = 1;
         elseif strcmp(device.loggerType, 'actuator')
@@ -129,8 +125,8 @@ classdef DataLogger < handle
 
     function disableDevice(obj, id)
       device = obj.findDeviceById(id);
-
-      if device
+      
+      if isa(device, 'handle')
         if strcmp(device.loggerType, 'sensor')
           obj.inConfiguration(device.inputPort) = 0;
         elseif strcmp(device.loggerType, 'actuator')
@@ -169,7 +165,7 @@ classdef DataLogger < handle
         end
 
         if strcmp(device.loggerType, 'sensor')
-          conf = [0; 0; 0; 0];
+          conf = [0; 0; 0; 0; 0; 0; 0; 0];
           conf(device.inputPort) = 1;
           obj.inConfiguration = conf;
         else
@@ -202,7 +198,7 @@ classdef DataLogger < handle
       lastTime = 0;
       while obj.shouldStop(Time) && ~obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
         buffer = fread(obj.s);
-        [out, finalTime] = processBatchData(buffer, chanMatL, obj.postProcessCallback, nChannelsL, SampleRateL, filterL, lastTime);
+        [out, finalTime] = processBatchData(buffer, chanMatL, obj.postProcessCallback, nChannelsL, SampleRateL, filterL, lastTime, obj.isDigitalEnabled);
         obj.assingOutToSensors(out);
         lastTime = finalTime;
       end
@@ -233,6 +229,7 @@ classdef DataLogger < handle
       Pos=0;
       ScanList(1:16)=0;
 
+      % Activate analog channels
       for i=1:4
         if obj.chanMat(i,1)
           switch i %Channel
@@ -270,6 +267,22 @@ classdef DataLogger < handle
           Pos=Pos+1;
         end
       end
+      
+      % Activate digital channels
+      digitalEnabled = 0;
+      for i=1:4
+        if obj.dChanMat(i)
+          digitalEnabled = 1;
+        end
+      end
+      
+      if digitalEnabled
+        ScanList(13:16)=[1 0 0 0]; % Activate the digital line
+        ScanList(6:8)=[0 0 0]; % No gain
+        word=binaryVectorToDecimal(ScanList);
+        slist_str=['slist ' num2str(Pos) ' ' num2str(word)];
+        fprintf(obj.s,'%s\r',slist_str);
+      end
 
       % srate. Setting the sample rate to sample.
       SR = obj.SampleRate * obj.nChannels;
@@ -287,13 +300,20 @@ classdef DataLogger < handle
 
     % Configures the out ports as stated on the outConfiguration matrix
     function applyOutConfiguration (obj)
-      outConf_str=['D 0' binaryVectorToHex(fliplr(~obj.outConfiguration))];
+      outConf_str=['D0' binaryVectorToHex(fliplr(obj.outConfiguration)')];
       fprintf(obj.s,'%s\r',outConf_str);
     end
 
     %
     %   Getters and setters
     %
+
+    function isDigitalEnabled = get.isDigitalEnabled (obj)
+      isDigitalEnabled = 0;
+      if sum(obj.dChanMat) > 0
+        isDigitalEnabled = 1;
+      end
+    end
 
     function chanMat = get.chanMat (obj)
       chanMat = zeros(4, 2);
@@ -302,13 +322,28 @@ classdef DataLogger < handle
         device = d{1};
         % If the device is a sensor and its activated
         if strcmp(device.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
-          chanMat(device.inputPort, 1:2) = [1, device.gain];
+          if device.inputPort < 5 % Analog In
+            chanMat(device.inputPort, 1:2) = [1, device.gain];
+          end
+        end
+      end
+    end
+
+    function dChanMat = get.dChanMat (obj)
+      dChanMat = zeros(4, 1);
+      for d = obj.ConnectedDevices
+        device = d{1};
+        % If the device is a sensor and its activated
+        if strcmp(device.loggerType, 'sensor') && obj.inConfiguration(device.inputPort)
+          if device.inputPort > 4 % Digital In
+            dChanMat(device.inputPort - 4) = 1;
+          end
         end
       end
     end
 
     function postProcessCallback = get.postProcessCallback (obj)
-      postProcessCallback = mat2cell(zeros(4, 1), [1 1 1 1]);
+      postProcessCallback = mat2cell(zeros(8, 1), [1 1 1 1 1 1 1 1]);
       for d = obj.ConnectedDevices
         device = d{1};
         % If the device is a sensor and its activated
@@ -319,7 +354,7 @@ classdef DataLogger < handle
     end
 
     function filter = get.filter (obj)
-      filter = zeros(4, 1);
+      filter = zeros(8, 1);
       for d = obj.ConnectedDevices
         device = d{1};
         % If the device is a sensor and its activated
@@ -336,9 +371,20 @@ classdef DataLogger < handle
     function nChannels = get.nChannels(obj)
       nChannels = 0;
       for j=1:4
-        if obj.chanMat(j,1)
+        if obj.inConfiguration(j)
           nChannels = nChannels+1;
         end
+      end
+      
+      digitalEnabled = 0;
+      for j=5:8
+        if obj.inConfiguration(j)
+          digitalEnabled = 1;
+        end
+      end
+      
+      if digitalEnabled
+        nChannels = nChannels+1;
       end
     end
 
@@ -417,7 +463,7 @@ end
 
 % Given the connected devices we activate all of them
 function inConfiguration = getConfiguration(ConnectedDevices)
-  inConfiguration = zeros(4, 1);
+  inConfiguration = zeros(8, 1);
   for d = ConnectedDevices
     device = d{1};
     if strcmp(device.loggerType, 'sensor')
@@ -427,34 +473,42 @@ function inConfiguration = getConfiguration(ConnectedDevices)
 end
 
 % Processes 1 single datapoint from the datalogger
-function dataPoint = processDataPoint(data, chanMat)
-  dataPoint = zeros(1, 4);
-  for i=1:4
-    if chanMat(i,1)
-      bin=[data(1,:) data(2,:)]; % See Table 'Di-155 Binary Dara Stream Example'
+function dataPoint = processDataPoint(data)
+  bin=[data(1,:) data(2,:)]; % See Table 'Di-155 Binary Data Stream Example'
 
-      % Inverting the MSB
-      if bin(1)=='1'
-        bin(1)='0';
-      else
-        bin(1)='1';
-      end
-
-      % From two's complement to decimal.
-      dataPoint(i)=twos2dec(bin);
-    end
+  % Inverting the MSB
+  if bin(1)=='1'
+    bin(1)='0';
+  else
+    bin(1)='1';
   end
+
+  % From two's complement to decimal.
+  dataPoint=twos2dec(bin);
+end
+
+% Processes 1 single digital point from the datalogger
+function dataPoint = processDigitalPoint(data)
+  dataPoint={data(1,7); data(1,6); data(1,5); data(1,4)};
 end
 
 % Processes mutliple datapoints from the datalogger, filter them and adds time
-function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback, nChannels, globalSampleRate, filter, initialTime)
+function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback, nChannels, globalSampleRate, filter, initialTime, isDigital)
   data=dec2bin(data);
 
   i=1;
-  dec=[];
-  while i+(2*sum(chanMat,1)-1)<=size(data,1) % While enough data is available for all enabled channels measurement.
+  dec=mat2cell(zeros(nChannels, 1), ones(nChannels, 1));
+  while i+2*nChannels <= size(data,1) % While enough data is available for all enabled channels measurement.
     if ~str2double(data(i,8))% Sync bit
-      dec(end+1,:) = processDataPoint([data(i+1,1:7); data(i,1:7)], chanMat);
+      for j = 0:(nChannels - 1)
+        if isDigital && j == nChannels - 1
+          % Digital Channel
+          dec{j+1}(end+1) = processDigitalPoint([data(i+j*2+1,1:7); data(i+j*2,1:7)]);
+        else
+          % Analog Channel
+          dec{j+1}(end+1) = processDataPoint([data(i+j*2+1,1:7); data(i+j*2,1:7)]);
+        end
+      end
       i=i+nChannels*2;
     else
       i=i+1;
@@ -462,8 +516,12 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
   end
 
   % Override the SampleRate with the new one
-  SampleRate = [globalSampleRate / filter(1); globalSampleRate / filter(2);...
-   globalSampleRate / filter(3); globalSampleRate / filter(4)];
+  SampleRate = [...
+    globalSampleRate / filter(1);...
+    globalSampleRate / filter(2);...
+    globalSampleRate / filter(3);...
+    globalSampleRate / filter(4)...
+  ];
 
   for j=1:4
     if chanMat(j,1) && filter(j) ~= 1
@@ -481,7 +539,7 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
       end
 
       % Save the new data
-      dec(:, j) = res;
+      dec{j} = res;
     end
   end
 
@@ -492,27 +550,34 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
   for i=1:4
     if chanMat(i,1)
       try
-        dec(:,i) = postProcessCallback{i}((50/chanMat(i,2))*(dec(:,i)/8192));
+        dec{i} = postProcessCallback{i}((50/chanMat(i,2))*(dec{i}/8192));
       catch err
         if strcmp(err.identifier, 'MATLAB:badsubscript')
           display('WARNING: postProcessCallback does not exist for some channel')
         else
           display('WARNING: an error ocurred changing the postProcessCallback, check your postProcessCallback functions')
         end
-        dec(:,i) = (50/chanMat(i,2))*(dec(:,i)/8192);
+        dec{i} = (50/chanMat(i,2))*(dec{i}/8192);
       end
     end
   end
 
   % Generate the out timedata series
   finalTime = 0;
-  out = mat2cell(zeros(4, 1), [1 1 1 1]);
+  out = mat2cell(zeros(8, 1), [1 1 1 1 1 1 1 1]);
   for i=1:4
     if chanMat(i,1)
-      out{i} = timeseries(dec(:, i), ((0:(1/SampleRate(i)):(length(dec)-1)*(1/SampleRate(i))) + initialTime)');
+      out{i} = timeseries(dec{i}, ((0:(1/SampleRate(i)):(length(dec{i})-1)*(1/SampleRate(i))) + initialTime)');
       
       % Set the final time
-      finalTime = (length(dec)-1)*(1/SampleRate(i)) + initialTime;
+      finalTime = (length(dec{i})-1)*(1/SampleRate(i)) + initialTime;
     end
+  end
+  
+  if isDigital
+    out{5} = dec{end}{1};
+    out{6} = dec{end}{2};
+    out{7} = dec{end}{3};
+    out{8} = dec{end}{4};
   end
 end
