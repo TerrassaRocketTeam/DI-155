@@ -205,17 +205,14 @@ classdef DataLogger < handle
 
       % Stop the AD conversion
       obj.isCapturing = false;
-      fprintf('stop connection2\n')
       fprintf(obj.s,'%s\r','stop');
 
       if obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
-        fprintf('\nRECONFIGURING\n\n')
         obj.getData();
       end
     end
 
     function stopGetData(obj)
-      fprintf('stop connection1\n')
       obj.isCapturing = false;
     end
 
@@ -442,7 +439,6 @@ classdef DataLogger < handle
       if Time
         stop = toc < Time;
       else
-        fprintf('check should stop capturing\n')
         stop = obj.isCapturing;
       end
     end
