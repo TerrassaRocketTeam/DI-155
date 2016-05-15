@@ -519,23 +519,25 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
     globalSampleRate / filter(4)...
   ];
 
+  i=0;
   for j=1:4
     if chanMat(j,1) && filter(j) ~= 1
+      i=i+1;
       % If filter is set we group values and take the mean of them
-      res = zeros(ceil(length(dec)/filter(j)), 1);
+      res = zeros(ceil(length(dec{i})/filter(j)), 1);
       f = filter(j);
 
-      for i=1:floor(length(dec)/f)
-        res(i) = mean(dec(((i-1)*f+1):(i*f), j));
+      for i=1:floor(length(dec{i})/f)
+        res(i) = mean(dec{i}(((i-1)*f+1):(i*f)));
       end
 
       % If any values are left, we take the avarage of them
-      if mod(length(dec), f)
-        res(ceil(length(dec)/f)) = mean(dec((end - mod(length(dec), f)):end, j));
+      if mod(length(dec{i}), f)
+        res(ceil(length(dec{i})/f)) = mean(dec{i}((end - mod(length(dec), f)):end));
       end
 
       % Save the new data
-      dec{j} = res;
+      dec{i} = res;
     end
   end
 
@@ -543,17 +545,19 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
 
   % From decimal number from -8192 to 8181 to voltage. See equation in
   % Table 'Ideal DI-155 ADC Binary Coding'
+  j=0;
   for i=1:4
     if chanMat(i,1)
+      j=j+1;
       try
-        dec{i} = postProcessCallback{i}((50/chanMat(i,2))*(dec{i}/8192));
+        dec{j} = postProcessCallback{i}((50/chanMat(i,2))*(dec{j}/8192));
       catch err
         if strcmp(err.identifier, 'MATLAB:badsubscript')
           display('WARNING: postProcessCallback does not exist for some channel')
         else
           display('WARNING: an error ocurred changing the postProcessCallback, check your postProcessCallback functions')
         end
-        dec{i} = (50/chanMat(i,2))*(dec{i}/8192);
+        dec{j} = (50/chanMat(i,2))*(dec{j}/8192);
       end
     end
   end
@@ -561,12 +565,14 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
   % Generate the out timedata series
   finalTime = 0;
   out = mat2cell(zeros(8, 1), [1 1 1 1 1 1 1 1]);
+  j=0;
   for i=1:4
     if chanMat(i,1)
-      out{i} = timeseries(dec{i}, ((0:(1/SampleRate(i)):(length(dec{i})-1)*(1/SampleRate(i))) + initialTime)');
+      j=j+1;
+      out{i} = timeseries(dec{j}, ((0:(1/SampleRate(i)):(length(dec{j})-1)*(1/SampleRate(i))) + initialTime)');
       
       % Set the final time
-      finalTime = (length(dec{i})-1)*(1/SampleRate(i)) + initialTime;
+      finalTime = (length(dec{j})-1)*(1/SampleRate(i)) + initialTime;
     end
   end
   

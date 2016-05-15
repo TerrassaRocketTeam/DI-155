@@ -7,7 +7,7 @@
 % Sensor configuration
 id = 'sensor1'; % Sensor id, must be unique per logger
 name = 'Pressure Sensor'; % Sensor name (for logging)
-inputPort = 1; % Analog input port on the data logger
+inputPort = 4; % Analog input port on the data logger
 gain = 5; % Sets the limits of the voltage input, see documentation !Important to not kill your data logger
 filter = 0; % Number of samples to merge and take the mean (reduces noise and induces a bit of lag)
 unitsName = 'bars'; % Units (for logging)
@@ -15,7 +15,7 @@ postProcessCallback = @(x)(x * 0.1 + 2); % Given the units in volts, transform t
 
 % NOTE: You might want to create a subclass for each type of sensor so you
 % can automatically set the name, gain, filter, units and callback.
-% You may even add other properties or methods like for example:
+% You may even add other properties or methodas like for example:
 % sensor.isMaxed
 % or
 % sensor.hasBeenActivated

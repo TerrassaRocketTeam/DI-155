@@ -22,7 +22,7 @@ function calibrateLogger( logger )
     device = d{1};
     if strcmp(device.loggerType, 'sensor')
       i = device.inputPort;
-      if exist('PreviousUnits', 'var') && ~isempty(PreviousUnits{i})
+      if exist('PreviousUnits', 'var') && length(PreviousUnits)>=i && ~isempty(PreviousUnits{i})
         % If there was a calibration file, ask the user wether to use it or not
 
         selection = questdlg(['Load previous calibration for channel ' num2str(i) '?'],...
