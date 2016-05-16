@@ -161,7 +161,7 @@ classdef DataLogger < handle
       end
 
       % Check if we require only one device
-      if nargin == 3
+      if nargin == 4
         % If is an id, get the device
         if isa(device, 'char')
           device = obj.findDeviceById(device);
@@ -206,13 +206,13 @@ classdef DataLogger < handle
         t.Period = 0.003;
         t.ExecutionMode = 'fixedSpacing';
         t.TimerFcn = @(~, ~) obj.readAndProcessData(...
-            Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL,timer...
+            Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL,async,timer...
           );
         start(t);
       else
         while ~dH.stop
           obj.readAndProcessData(...
-            Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL...
+            Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL,async...
           );
         end
       end
@@ -220,7 +220,7 @@ classdef DataLogger < handle
     
     % Private
     function readAndProcessData (obj,...
-      Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL,timer...
+      Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL,async,timer...
     )
       if obj.shouldStop(Time, timetrack) && ~obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
         buffer = fread(obj.s);
@@ -228,7 +228,7 @@ classdef DataLogger < handle
         obj.assingOutToSensors(out);
         dH.lastTime = finalTime;
       else
-        obj.finishGetData(chanMatL, SampleRateL, filterL);
+        obj.finishGetData(chanMatL, SampleRateL, filterL, async);
         dH.stop = 1;
         if nargin == 9
           stop(timer);
@@ -237,13 +237,13 @@ classdef DataLogger < handle
     end
     
     % Private
-    function finishGetData (obj, chanMatL, SampleRateL, filterL)
+    function finishGetData (obj, chanMatL, SampleRateL, filterL, async)
       % Stop the AD conversion
       obj.isCapturing = false;
       fprintf(obj.s,'%s\r','stop');
 
       if obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
-        obj.getData();
+        obj.getData(0, async);
       end
     end
 
