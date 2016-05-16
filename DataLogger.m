@@ -197,31 +197,42 @@ classdef DataLogger < handle
 
       % Capturing data
       fread(obj.s);
-      lastTime = 0;
+      dH = ProcessDataHandler();
       timetrack = tic;
-      stop = 0;
 
-      while ~stop
-        [stop, lastTime]  = obj.readAndProcessData(...
-          Time,lastTime,timetrack,chanMatL,SampleRateL,filterL,nChannelsL...
-        );
+      if async
+        t = timer;
+        t.StartDelay = 0.003;
+        t.Period = 0.003;
+        t.ExecutionMode = 'fixedSpacing';
+        t.TimerFcn = @(~, ~) obj.readAndProcessData(...
+            Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL,timer...
+          );
+        start(t);
+      else
+        while ~dH.stop
+          obj.readAndProcessData(...
+            Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL...
+          );
+        end
       end
     end
     
     % Private
-    function [stop, lastTime] = readAndProcessData (obj,...
-      Time,lastTime,timetrack,chanMatL,SampleRateL,filterL,nChannelsL...
+    function readAndProcessData (obj,...
+      Time,dH,timetrack,chanMatL,SampleRateL,filterL,nChannelsL,timer...
     )
-      stop = 0;
-
       if obj.shouldStop(Time, timetrack) && ~obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
         buffer = fread(obj.s);
-        [out, finalTime] = processBatchData(buffer, chanMatL, obj.postProcessCallback, nChannelsL, SampleRateL, filterL, lastTime, obj.isDigitalEnabled);
+        [out, finalTime] = processBatchData(buffer, chanMatL, obj.postProcessCallback, nChannelsL, SampleRateL, filterL, dH.lastTime, obj.isDigitalEnabled);
         obj.assingOutToSensors(out);
-        lastTime = finalTime;
+        dH.lastTime = finalTime;
       else
         obj.finishGetData(chanMatL, SampleRateL, filterL);
-        stop = 1;
+        dH.stop = 1;
+        if nargin == 9
+          stop(timer);
+        end
       end
     end
     
@@ -593,7 +604,7 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
   for i=1:4
     if chanMat(i,1)
       j=j+1;
-      out{i} = timeseries(dec{j}, ((0:(1/SampleRate(i)):(length(dec{j})-1)*(1/SampleRate(i))) + initialTime)');
+      out{i} = timeseries(dec{j}', ((0:(1/SampleRate(i)):(length(dec{j})-1)*(1/SampleRate(i))) + initialTime)');
       
       % Set the final time
       finalTime = (length(dec{j})-1)*(1/SampleRate(i)) + initialTime;
@@ -617,4 +628,6 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
     % Set the final time
     finalTime = (length(dec{end})-1)*(1/globalSampleRate) + initialTime;
   end
+  
+  finalTime;
 end
