@@ -7,7 +7,7 @@
 % Sensor configuration
 id = 'sensor1'; % Sensor id, must be unique per logger
 name = 'Pressure Sensor'; % Sensor name (for logging)
-inputPort = 4; % Analog input port on the data logger
+inputPort = 5; % Analog input port on the data logger
 gain = 5; % Sets the limits of the voltage input, see documentation !Important to not kill your data logger
 filter = 0; % Number of samples to merge and take the mean (reduces noise and induces a bit of lag)
 unitsName = 'bars'; % Units (for logging)

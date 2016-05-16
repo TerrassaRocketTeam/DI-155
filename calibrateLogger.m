@@ -20,7 +20,7 @@ function calibrateLogger( logger )
   % Test each channel
   for d = ConnectedDevices
     device = d{1};
-    if strcmp(device.loggerType, 'sensor')
+    if strcmp(device.loggerType, 'sensor') && device.inputPort < 5
       i = device.inputPort;
       if exist('PreviousUnits', 'var') && length(PreviousUnits)>=i && ~isempty(PreviousUnits{i})
         % If there was a calibration file, ask the user wether to use it or not
@@ -41,8 +41,8 @@ function calibrateLogger( logger )
         % Launch the calibration tool
         device.postProcessCallback = calibrate(logger, device);
       end
+      Units{i} = device.postProcessCallback;
     end
-    Units{i} = device.postProcessCallback
   end
 
   % Save this new calibration settings

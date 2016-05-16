@@ -340,7 +340,7 @@ classdef DataLogger < handle
     end
 
     function postProcessCallback = get.postProcessCallback (obj)
-      postProcessCallback = mat2cell(zeros(8, 1), [1 1 1 1 1 1 1 1]);
+      postProcessCallback = cell(8, 1);
       for d = obj.ConnectedDevices
         device = d{1};
         % If the device is a sensor and its activated
@@ -485,21 +485,21 @@ end
 
 % Processes 1 single digital point from the datalogger
 function dataPoint = processDigitalPoint(data)
-  dataPoint={data(1,7); data(1,6); data(1,5); data(1,4)};
+  dataPoint=[str2double(data(1,7)) str2double(data(1,6)) str2double(data(1,5)) str2double(data(1,4))];
 end
 
 % Processes mutliple datapoints from the datalogger, filter them and adds time
 function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback, nChannels, globalSampleRate, filter, initialTime, isDigital)
-  data=dec2bin(data);
+  data=dec2bin(data, 8);
 
   i=1;
-  dec=mat2cell(zeros(nChannels, 1), ones(nChannels, 1));
+  dec=cell(nChannels, 1);
   while i+2*nChannels <= size(data,1) % While enough data is available for all enabled channels measurement.
     if ~str2double(data(i,8))% Sync bit
       for j = 0:(nChannels - 1)
         if isDigital && j == nChannels - 1
           % Digital Channel
-          dec{j+1}(end+1) = processDigitalPoint([data(i+j*2+1,1:7); data(i+j*2,1:7)]);
+          dec{j+1}(end+1, :) = processDigitalPoint([data(i+j*2+1,1:7); data(i+j*2,1:7)]);
         else
           % Analog Channel
           dec{j+1}(end+1) = processDataPoint([data(i+j*2+1,1:7); data(i+j*2,1:7)]);
@@ -564,7 +564,7 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
 
   % Generate the out timedata series
   finalTime = 0;
-  out = mat2cell(zeros(8, 1), [1 1 1 1 1 1 1 1]);
+  out = cell(8, 1);
   j=0;
   for i=1:4
     if chanMat(i,1)
@@ -577,9 +577,17 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
   end
   
   if isDigital
-    out{5} = dec{end}{1};
-    out{6} = dec{end}{2};
-    out{7} = dec{end}{3};
-    out{8} = dec{end}{4};
+    out{5} = timeseries(...
+      dec{end}(:, 1)', ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
+    );
+    out{6} = timeseries(...
+      dec{end}(:, 2)', ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
+    );
+    out{7} = timeseries(...
+      dec{end}(:, 3)', ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
+    );
+    out{8} = timeseries(...
+      dec{end}(:, 4)', ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
+    );
   end
 end
