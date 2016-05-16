@@ -146,10 +146,13 @@ classdef DataLogger < handle
     %
     %     - device @device or @device id (optional)
     %
-    function getData(obj, Time, device)
+    function getData(obj, Time, async, device)
       % Check if Time was provided
       if nargin == 1
         Time = 0;
+        async = 0;
+      elseif nargin == 2
+        async = 0;
       end
 
       % Check if it is already getting data
@@ -185,7 +188,7 @@ classdef DataLogger < handle
       % Make sure we use the correct sample rate
       SampleRateL = SampleRateL * obj.nChannels;
       if SampleRateL > 10000
-        SampleRateL = 10000;
+        error('Sample rate is to high')
       end
 
       % Star AD conversion
@@ -194,15 +197,36 @@ classdef DataLogger < handle
 
       % Capturing data
       fread(obj.s);
-      tic;
       lastTime = 0;
-      while obj.shouldStop(Time) && ~obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
+      timetrack = tic;
+      stop = 0;
+
+      while ~stop
+        [stop, lastTime]  = obj.readAndProcessData(...
+          Time,lastTime,timetrack,chanMatL,SampleRateL,filterL,nChannelsL...
+        );
+      end
+    end
+    
+    % Private
+    function [stop, lastTime] = readAndProcessData (obj,...
+      Time,lastTime,timetrack,chanMatL,SampleRateL,filterL,nChannelsL...
+    )
+      stop = 0;
+
+      if obj.shouldStop(Time, timetrack) && ~obj.shouldReconfigure(chanMatL, SampleRateL, filterL)
         buffer = fread(obj.s);
         [out, finalTime] = processBatchData(buffer, chanMatL, obj.postProcessCallback, nChannelsL, SampleRateL, filterL, lastTime, obj.isDigitalEnabled);
         obj.assingOutToSensors(out);
         lastTime = finalTime;
+      else
+        obj.finishGetData(chanMatL, SampleRateL, filterL);
+        stop = 1;
       end
-
+    end
+    
+    % Private
+    function finishGetData (obj, chanMatL, SampleRateL, filterL)
       % Stop the AD conversion
       obj.isCapturing = false;
       fprintf(obj.s,'%s\r','stop');
@@ -284,7 +308,7 @@ classdef DataLogger < handle
       % srate. Setting the sample rate to sample.
       SR = obj.SampleRate * obj.nChannels;
       if SR > 10000
-        SR = 10000;
+        error('SampleRate is to high')
       end
       srate=750000/SR; %This calculation is given in the documentation, in 'srate Scan Rate Command'.
       srate_str=['srate ' num2str(srate)];
@@ -435,9 +459,9 @@ classdef DataLogger < handle
 
     %% @PRIVATE
     %    + Check if a real time acquisition shoul stop or not
-    function stop = shouldStop(obj, Time)
+    function stop = shouldStop(obj, Time, timetrack)
       if Time
-        stop = toc < Time;
+        stop = toc(timetrack) < Time;
       else
         stop = obj.isCapturing;
       end
@@ -578,16 +602,19 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
   
   if isDigital
     out{5} = timeseries(...
-      dec{end}(:, 1)', ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
+      dec{end}(:, 1), ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
     );
     out{6} = timeseries(...
-      dec{end}(:, 2)', ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
+      dec{end}(:, 2), ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
     );
     out{7} = timeseries(...
-      dec{end}(:, 3)', ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
+      dec{end}(:, 3), ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
     );
     out{8} = timeseries(...
-      dec{end}(:, 4)', ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
+      dec{end}(:, 4), ((0:(1/globalSampleRate):(length(dec{end})-1)*(1/globalSampleRate)) + initialTime)'...
     );
+    
+    % Set the final time
+    finalTime = (length(dec{end})-1)*(1/globalSampleRate) + initialTime;
   end
 end

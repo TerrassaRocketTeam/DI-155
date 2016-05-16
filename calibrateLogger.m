@@ -62,7 +62,7 @@ function [Units] = calibrate(logger, sensor)
     @(~, ~)(utility.updateCurrentPoint(mean(sensor.lastData))));
 
   % Start getting data and send it to the calibration utility
-  logger.getData(0, sensor);
+  logger.getData(0, 0, sensor);
 
   % Save the retults
   Units = utility.Units;

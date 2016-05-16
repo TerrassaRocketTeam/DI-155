@@ -60,7 +60,7 @@ try
     @(~, ~)(processRealtimePoint(sensor.lastData, interface, fileName)));
 
   % Start the data acquisition
-  logger.getData(0, sensor);
+  logger.getData(0, 0, sensor);
 
   % Dismantle that
   logger.delete()

@@ -65,6 +65,7 @@ classdef DataLogger_sensor < handle
         obj.loggerType = 'sensor';
         obj.name = name;
         obj.inputPort = inputPort;
+        obj.data = timeseries();
 
         if nargin > 4
           obj.filter = filter;
