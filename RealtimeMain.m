@@ -11,7 +11,7 @@ inputPort = 1; % Analog input port on the data logger
 gain = 5; % Sets the limits of the voltage input, see documentation !Important to not kill your data logger
 filter = 0; % Number of samples to merge and take the mean (reduces noise and induces a bit of lag)
 unitsName = 'bars'; % Units (for logging)
-postProcessCallback = @(x)(x * 0.1 + 2); % Given the units in volts, transform them to whatever you want
+postProcessCallback = @(x)(x); % Given the units in volts, transform them to whatever you want
 
 % NOTE: You might want to create a subclass for each type of sensor so you
 % can automatically set the name, gain, filter, units and callback.

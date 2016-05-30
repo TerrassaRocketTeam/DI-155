@@ -228,11 +228,11 @@ classdef DataLogger < handle
         obj.assingOutToSensors(out);
         dH.lastTime = finalTime;
       else
-        obj.finishGetData(chanMatL, SampleRateL, filterL, async);
-        dH.stop = 1;
         if nargin == 9
           stop(timer);
         end
+        dH.stop = 1;
+        obj.finishGetData(chanMatL, SampleRateL, filterL, async);
       end
     end
     
@@ -628,6 +628,4 @@ function [out, finalTime] = processBatchData(data, chanMat, postProcessCallback,
     % Set the final time
     finalTime = (length(dec{end})-1)*(1/globalSampleRate) + initialTime;
   end
-  
-  finalTime;
 end
